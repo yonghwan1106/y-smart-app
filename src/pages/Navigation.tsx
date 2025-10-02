@@ -1,14 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { MapPin, Navigation as NavigationIcon, ChevronDown, ChevronUp, AlertCircle, X } from 'lucide-react';
 import Header from '../components/common/Header';
 import Card from '../components/common/Card';
+import { createMap, createMarker, geocodeAddress } from '../services/kakaoMapService';
 
 const Navigation: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const mapRef = useRef<HTMLDivElement>(null);
   const [timelineExpanded, setTimelineExpanded] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [progress, setProgress] = useState(0);
+  const [map, setMap] = useState<any>(null);
+
+  const { route, departure, destination } = location.state || {
+    departure: '수지구청역',
+    destination: '용인시청',
+    route: null
+  };
 
   const steps = [
     { status: 'completed', label: '출발', icon: '🏁' },
@@ -17,6 +27,80 @@ const Navigation: React.FC = () => {
     { status: 'pending', label: '버스 환승', icon: '🚌' },
     { status: 'pending', label: '도착', icon: '🎯' },
   ];
+
+  // Initialize Kakao Map
+  useEffect(() => {
+    const initMap = async () => {
+      if (!mapRef.current) return;
+
+      // 용인시청 기본 좌표 (37.2411, 127.1776)
+      let centerCoord = { lat: 37.2411, lng: 127.1776 };
+
+      // 출발지 좌표 가져오기
+      try {
+        const departureCoord = await geocodeAddress(departure);
+        if (departureCoord) {
+          centerCoord = departureCoord;
+        }
+      } catch (error) {
+        console.error('주소 변환 실패:', error);
+      }
+
+      // 지도 생성
+      const kakaoMap = createMap(mapRef.current, {
+        center: centerCoord,
+        level: 5,
+      });
+
+      setMap(kakaoMap);
+
+      // 마커 추가
+      try {
+        const departureCoord = await geocodeAddress(departure);
+        const destinationCoord = await geocodeAddress(destination);
+
+        if (departureCoord) {
+          createMarker(kakaoMap, departureCoord, {
+            title: departure,
+          });
+        }
+
+        if (destinationCoord) {
+          createMarker(kakaoMap, destinationCoord, {
+            title: destination,
+          });
+
+          // 경로가 있으면 폴리라인 그리기
+          if (departureCoord && window.kakao && window.kakao.maps) {
+            const linePath = [
+              new window.kakao.maps.LatLng(departureCoord.lat, departureCoord.lng),
+              new window.kakao.maps.LatLng(destinationCoord.lat, destinationCoord.lng),
+            ];
+
+            const polyline = new window.kakao.maps.Polyline({
+              path: linePath,
+              strokeWeight: 5,
+              strokeColor: '#14B8A6',
+              strokeOpacity: 0.8,
+              strokeStyle: 'solid',
+            });
+
+            polyline.setMap(kakaoMap);
+
+            // 지도 범위 재설정하여 모든 마커 보이게
+            const bounds = new window.kakao.maps.LatLngBounds();
+            bounds.extend(new window.kakao.maps.LatLng(departureCoord.lat, departureCoord.lng));
+            bounds.extend(new window.kakao.maps.LatLng(destinationCoord.lat, destinationCoord.lng));
+            kakaoMap.setBounds(bounds);
+          }
+        }
+      } catch (error) {
+        console.error('마커 생성 실패:', error);
+      }
+    };
+
+    initMap();
+  }, [departure, destination]);
 
   // Simulate progress
   useEffect(() => {
@@ -31,36 +115,30 @@ const Navigation: React.FC = () => {
       <Header title="실시간 안내" showBack />
 
       {/* Map Area */}
-      <div className="relative h-[420px] bg-gradient-to-br from-teal-400 via-blue-400 to-purple-400 overflow-hidden">
-        {/* Animated Background */}
-        <div className="absolute inset-0 opacity-20">
-          <div className="absolute top-20 left-20 w-64 h-64 bg-white rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute bottom-20 right-20 w-48 h-48 bg-white rounded-full blur-3xl animate-pulse delay-700"></div>
-        </div>
-
-        {/* Map Placeholder */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-center text-white">
-            <MapPin size={56} className="mx-auto mb-3 animate-bounce" />
-            <p className="text-sm font-semibold bg-white/20 backdrop-blur-sm px-4 py-2 rounded-full">
-              📍 실시간 위치 추적 중
-            </p>
-          </div>
-        </div>
+      <div className="relative h-[420px] overflow-hidden">
+        {/* Kakao Map Container */}
+        <div ref={mapRef} className="w-full h-full"></div>
 
         {/* Map Controls */}
-        <div className="absolute top-4 right-4 flex flex-col gap-2">
-          <button className="bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-xl hover:bg-white transition-all active:scale-95">
+        <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+          <button
+            onClick={() => {
+              if (map && window.kakao && window.kakao.maps) {
+                // 현재 위치로 이동 (실제로는 geolocation API 사용)
+                map.setLevel(3);
+              }
+            }}
+            className="bg-white/90 backdrop-blur-sm p-3 rounded-xl shadow-xl hover:bg-white transition-all active:scale-95"
+          >
             <NavigationIcon size={22} className="text-teal-600" />
           </button>
         </div>
 
-        {/* Current Location Marker */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-          <div className="relative">
-            <div className="w-8 h-8 bg-white rounded-full border-4 border-teal-500 shadow-2xl animate-pulse z-10"></div>
-            <div className="absolute inset-0 w-8 h-8 bg-teal-400 rounded-full animate-ping"></div>
-            <div className="absolute inset-0 w-16 h-16 bg-teal-300 rounded-full animate-ping -translate-x-1/4 -translate-y-1/4 opacity-50"></div>
+        {/* Real-time Location Indicator */}
+        <div className="absolute bottom-4 left-4 z-10">
+          <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-full shadow-xl flex items-center gap-2">
+            <div className="w-3 h-3 bg-teal-500 rounded-full animate-pulse"></div>
+            <span className="text-sm font-semibold text-gray-800">📍 실시간 추적 중</span>
           </div>
         </div>
       </div>

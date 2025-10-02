@@ -1,19 +1,48 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapPin, Home as HomeIcon, Briefcase, Star, Bus, Train, Smartphone, ArrowUpDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../components/common/Header';
 import Input from '../components/common/Input';
 import Card from '../components/common/Card';
+import { searchPlaces } from '../services/kakaoMapService';
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
   const [departure, setDeparture] = useState('현재 위치');
   const [destination, setDestination] = useState('');
+  const [destinationSuggestions, setDestinationSuggestions] = useState<any[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // 목적지 자동완성
+  useEffect(() => {
+    const searchTimeout = setTimeout(async () => {
+      if (destination.length >= 2) {
+        const results = await searchPlaces(destination);
+        setDestinationSuggestions(results.slice(0, 5)); // 상위 5개만
+        setShowSuggestions(true);
+      } else {
+        setDestinationSuggestions([]);
+        setShowSuggestions(false);
+      }
+    }, 300); // 300ms 디바운싱
+
+    return () => clearTimeout(searchTimeout);
+  }, [destination]);
 
   const handleSearch = () => {
     if (destination) {
-      navigate('/routes');
+      navigate('/routes', {
+        state: {
+          departure,
+          destination,
+        }
+      });
     }
+  };
+
+  const handleSelectSuggestion = (place: any) => {
+    setDestination(place.place_name);
+    setShowSuggestions(false);
   };
 
   const quickAccess = [
@@ -60,13 +89,34 @@ const Home: React.FC = () => {
             </button>
           </div>
 
-          <Input
-            value={destination}
-            onChange={setDestination}
-            placeholder="어디로 가시나요?"
-            icon={<MapPin size={20} className="text-teal-500" />}
-            className="bg-white shadow-xl border-0 ring-2 ring-white/20 focus:ring-white/40"
-          />
+          <div className="relative">
+            <Input
+              value={destination}
+              onChange={setDestination}
+              placeholder="어디로 가시나요?"
+              icon={<MapPin size={20} className="text-teal-500" />}
+              className="bg-white shadow-xl border-0 ring-2 ring-white/20 focus:ring-white/40"
+            />
+
+            {/* 자동완성 결과 */}
+            {showSuggestions && destinationSuggestions.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-gray-200 max-h-60 overflow-y-auto z-50">
+                {destinationSuggestions.map((place, index) => (
+                  <button
+                    key={index}
+                    onClick={() => handleSelectSuggestion(place)}
+                    className="w-full text-left px-4 py-3 hover:bg-teal-50 transition-colors border-b border-gray-100 last:border-b-0"
+                  >
+                    <div className="font-semibold text-gray-900">{place.place_name}</div>
+                    <div className="text-sm text-gray-500 mt-0.5">{place.address_name}</div>
+                    {place.category_name && (
+                      <div className="text-xs text-teal-600 mt-1">{place.category_name}</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Quick Search Button */}
           <button

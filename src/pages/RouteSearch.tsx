@@ -1,16 +1,56 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Settings, Zap, DollarSign, Heart } from 'lucide-react';
 import Header from '../components/common/Header';
 import RouteCard from '../components/route/RouteCard';
 import { Route } from '../types';
+import { searchRoute } from '../services/kakaoRouteService';
+import { geocodeAddress } from '../services/kakaoMapService';
 
 const RouteSearch: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [selectedFilter, setSelectedFilter] = useState<'fast' | 'cheap' | 'comfortable'>('fast');
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Mock data
-  const routes: Route[] = [
+  const { departure, destination } = location.state || {
+    departure: '수지구청역',
+    destination: '용인시청'
+  };
+
+  // 경로 검색
+  useEffect(() => {
+    const fetchRoutes = async () => {
+      setLoading(true);
+      try {
+        // 주소를 좌표로 변환
+        const originCoord = await geocodeAddress(departure);
+        const destCoord = await geocodeAddress(destination);
+
+        if (originCoord && destCoord) {
+          // 카카오 경로 API 호출
+          const foundRoutes = await searchRoute(
+            { ...originCoord, name: departure },
+            { ...destCoord, name: destination }
+          );
+          setRoutes(foundRoutes);
+        } else {
+          // 좌표 변환 실패 시 Mock 데이터
+          setRoutes(getMockRoutes());
+        }
+      } catch (error) {
+        console.error('경로 검색 실패:', error);
+        setRoutes(getMockRoutes());
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRoutes();
+  }, [departure, destination]);
+
+  const getMockRoutes = (): Route[] => [
     {
       id: '1',
       duration: 35,
@@ -59,9 +99,9 @@ const RouteSearch: React.FC = () => {
       <div className="bg-gradient-to-r from-teal-500 to-blue-500 px-4 py-4 text-white">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <div className="text-lg font-bold">수지구청역 → 용인시청</div>
+            <div className="text-lg font-bold">{departure} → {destination}</div>
             <div className="text-sm text-teal-100 flex items-center gap-2">
-              ⏰ 오늘 오후 2:15 출발
+              ⏰ {new Date().toLocaleString('ko-KR', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 출발
             </div>
           </div>
           <button className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-3 py-2 rounded-lg flex items-center gap-1 text-sm font-medium transition-all active:scale-95">
@@ -70,6 +110,16 @@ const RouteSearch: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Loading Indicator */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500 mx-auto mb-4"></div>
+            <p className="text-gray-600 font-medium">최적의 경로를 검색하는 중...</p>
+          </div>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="bg-white px-4 py-4 shadow-sm">
@@ -98,15 +148,31 @@ const RouteSearch: React.FC = () => {
       </div>
 
       {/* Route List */}
-      <div className="p-4 space-y-4">
-        {routes.map((route) => (
-          <RouteCard
-            key={route.id}
-            route={route}
-            onSelect={() => navigate('/navigation')}
-          />
-        ))}
-      </div>
+      {!loading && (
+        <div className="p-4 space-y-4">
+          {routes.length > 0 ? (
+            routes.map((route) => (
+              <RouteCard
+                key={route.id}
+                route={route}
+                onSelect={() => navigate('/navigation', {
+                  state: { route, departure, destination }
+                })}
+              />
+            ))
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-gray-500">경로를 찾을 수 없습니다.</p>
+              <button
+                onClick={() => navigate('/')}
+                className="mt-4 px-6 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors"
+              >
+                다시 검색하기
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Info Banner */}
       <div className="mx-4 mb-4">
